@@ -73,35 +73,26 @@ private fun getGradleCommand(workspace: Path): Path {
 
 private fun readDependenciesViaGradleCLI(projectDirectory: Path, gradleScripts: List<String>, gradleTasks: List<String>): Set<Path> {
     LOG.info("Resolving dependencies for '{}' through Gradle's CLI using tasks {}...", projectDirectory.fileName, gradleTasks)
-
-    val tmpScripts = gradleScripts.map { gradleScriptToTempFile(it, deleteOnExit = false).toPath().toAbsolutePath() }
-    val gradle = getGradleCommand(projectDirectory)
-
-    val command = "$gradle ${tmpScripts.map { "-I $it" }.joinToString(" ")} ${gradleTasks.joinToString(" ")} --console=plain"
+    val command = "gradle --quiet classpath"
     val dependencies = findGradleCLIDependencies(command, projectDirectory)
-        ?.also { LOG.debug("Classpath for task {}", it) }
+        ?.also { LOG.info("Classpath for task {}", it) }
         .orEmpty()
-
-    tmpScripts.forEach(Files::delete)
     return dependencies
 }
 
 private fun findGradleCLIDependencies(command: String, projectDirectory: Path): Set<Path>? {
     val (result, errors) = execAndReadStdoutAndStderr(command, projectDirectory)
-    LOG.debug(result)
+    LOG.info(result)
     if ("FAILURE: Build failed" in errors) {
         LOG.warn("Gradle task failed: {}", errors.lines().firstOrNull())
     }
     return parseGradleCLIDependencies(result)
 }
 
-private val artifactPattern by lazy { "kotlin-lsp-gradle (.+)(?:\r?\n)".toRegex() }
-private val gradleErrorWherePattern by lazy { "\\*\\s+Where:[\r\n]+(\\S\\.*)".toRegex() }
-
 private fun parseGradleCLIDependencies(output: String): Set<Path>? {
     LOG.debug(output)
-    val artifacts = artifactPattern.findAll(output)
-        .mapNotNull { Paths.get(it.groups[1]?.value) }
+    val artifacts = output.split(":")
+        .mapNotNull { Paths.get(it) }
         .filterNotNull()
     return artifacts.toSet()
 }
